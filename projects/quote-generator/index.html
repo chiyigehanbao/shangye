@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>报价单生成器 · AI 版</title>
+<link rel="stylesheet" href="../../assets/style.css" />
+<style>
+  .topbar { position: sticky; top: 0; z-index: 40; backdrop-filter: blur(14px); background: rgba(7,11,24,.8); border-bottom: 1px solid var(--line); }
+  .topbar .inner { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+  .topbar .back { color: var(--text-soft); font-size: 14px; }
+  .page { padding: 28px 0 80px; }
+  .layout { display: grid; grid-template-columns: 470px 1fr; gap: 26px; align-items: start; }
+  .form-grid { display: grid; gap: 14px; }
+  .item-row { display: grid; grid-template-columns: 1fr 56px 50px 80px 82px 24px; gap: 7px; margin-bottom: 8px; align-items: center; }
+  .item-row input { padding: 8px 9px; font-size: 13px; }
+  .item-row .amt { text-align: right; font-weight: 650; font-size: 13px; color: var(--text-soft); }
+  .rm { background: none; border: 0; color: var(--red); cursor: pointer; font-size: 15px; }
+  .rm:hover { color: #fca5a5; }
+  .ai-card { border-color: rgba(168,85,247,.35); background: linear-gradient(120deg, rgba(99,102,241,.10), rgba(168,85,247,.08)); }
+  .saved-item { display: flex; align-items: center; justify-content: space-between; padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 8px; font-size: 13px; }
+  .saved-item .acts { display: flex; gap: 8px; }
+  .saved-item .lnk { color: var(--i2); cursor: pointer; font-size: 12px; }
+  .saved-item .lnk.del { color: var(--red); }
+
+  .paper { background: #fff; color: #17203a; border-radius: 16px; padding: 44px; box-shadow: 0 30px 70px rgba(2,6,23,.6); }
+  .paper .q-head { display: flex; justify-content: space-between; border-bottom: 3px solid #17203a; padding-bottom: 18px; }
+  .paper h1 { margin: 0; font-size: 30px; letter-spacing: .05em; }
+  .paper .meta { text-align: right; font-size: 13px; color: #5b6377; }
+  .paper .parties { display: flex; justify-content: space-between; margin: 22px 0; font-size: 14px; }
+  .paper .parties h4 { margin: 0 0 5px; font-size: 11px; color: #8a93ad; text-transform: uppercase; letter-spacing: .1em; }
+  .paper table.q { width: 100%; border-collapse: collapse; margin-top: 8px; }
+  .paper table.q th { background: #17203a; color: #fff; text-align: left; padding: 11px 13px; font-size: 13px; }
+  .paper table.q td { padding: 11px 13px; border-bottom: 1px solid #eceff7; font-size: 14px; }
+  .paper td.num, .paper th.num { text-align: right; }
+  .paper .totals { margin-top: 18px; margin-left: auto; width: 300px; font-size: 14px; color: #17203a; }
+  .paper .totals .r { display: flex; justify-content: space-between; padding: 6px 0; }
+  .paper .totals .grand { border-top: 3px solid #17203a; margin-top: 6px; padding-top: 12px; font-size: 19px; font-weight: 800; }
+  .paper .note { margin-top: 26px; padding-top: 16px; border-top: 1px dashed #d9def0; font-size: 13px; color: #5b6377; }
+  .paper .brandline { display: flex; align-items: center; gap: 10px; font-weight: 800; }
+
+  @media print {
+    body { background: #fff; }
+    body::before, body::after { display: none; }
+    .no-print { display: none !important; }
+    .layout { display: block; }
+    .paper { box-shadow: none; border-radius: 0; padding: 0; }
+    @page { margin: 16mm; }
+  }
+  @media (max-width: 960px) { .layout { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<div class="topbar no-print">
+  <div class="container inner">
+    <b>🧾 报价单生成器</b>
+    <div class="row"><div id="ol-status"></div><a class="back" href="../../index.html">← 返回作品集</a></div>
+  </div>
+</div>
+
+<div class="container page layout">
+
+  <div class="no-print">
+    <div class="card pad" data-reveal>
+      <div class="eyebrow">报价信息</div>
+      <div class="form-grid" style="margin-top:14px">
+        <div><label>报价方 / 公司</label><input id="f-company" value="示例科技工作室" /></div>
+        <div><label>客户名称</label><input id="f-customer" value="张三（示例客户）" /></div>
+        <div class="row" style="gap:10px">
+          <div style="flex:1"><label>报价单号</label><input id="f-no" value="QT-2026-001" /></div>
+          <div style="flex:1"><label>日期</label><input id="f-date" type="date" /></div>
+        </div>
+        <div class="row" style="gap:10px">
+          <div style="flex:1"><label>币种</label><select id="f-currency">
+            <option value="CNY">¥ 人民币</option><option value="USD">$ 美元</option><option value="EUR">€ 欧元</option>
+          </select></div>
+          <div style="flex:1"><label>税率 (%)</label><input id="f-tax" type="number" value="6" step="0.1" /></div>
+          <div style="flex:1"><label>优惠 (%)</label><input id="f-disc" type="number" value="0" step="0.1" /></div>
+        </div>
+        <div><label>备注</label><textarea id="f-note" rows="2">报价有效期 30 天，款到后 3 个工作日内交付。</textarea></div>
+      </div>
+    </div>
+
+    <div class="card pad ai-card" style="margin-top:16px" data-reveal data-delay="0.05">
+      <div class="eyebrow" style="color:#d8b4fe">AI 生成报价条目 · 本地 Ollama</div>
+      <p class="muted" style="font-size:13px;margin:8px 0 12px">用一句话描述项目，AI 拆解成报价条目与参考单价；离线时用关键词规则兜底。</p>
+      <textarea id="aiBrief" rows="2" placeholder="例如：给一家咖啡店做官网首页 + Excel 每日销售汇总工具，另需服务器部署"></textarea>
+      <button class="btn btn-primary btn-block" id="aiBtn" style="margin-top:10px">✨ 生成报价条目</button>
+    </div>
+
+    <div class="card pad" style="margin-top:16px" data-reveal data-delay="0.1">
+      <div class="row between"><b>报价明细</b><button class="btn btn-sm" id="addItem">+ 添加一行</button></div>
+      <p class="dim" style="font-size:11.5px;margin:8px 0 10px">单位可填「项 / 人天 / 小时」等，会显示在报价单中。</p>
+      <div id="items"></div>
+    </div>
+
+    <div class="card pad" style="margin-top:16px" data-reveal data-delay="0.15">
+      <div class="row between"><b>保存 / 载入报价单</b><span class="dim" style="font-size:11.5px">保存在本机浏览器</span></div>
+      <div class="row" style="gap:8px;margin-top:12px">
+        <input id="saveName" placeholder="给这份报价起个名字" style="flex:1" />
+        <button class="btn btn-sm" id="saveBtn">保存当前</button>
+      </div>
+      <div id="savedList" style="margin-top:12px"></div>
+    </div>
+
+    <div class="row" style="margin-top:16px">
+      <button class="btn btn-primary" id="printBtn">🖨 打印 / 导出 PDF</button>
+      <button class="btn" id="resetBtn">重置为示例</button>
+      <button class="btn btn-ghost" id="jsonBtn">导出 JSON</button>
+    </div>
+  </div>
+
+  <div class="paper" id="quote">
+    <div class="q-head">
+      <div>
+        <div class="brandline">◈ <span id="p-company-brand">报价方</span></div>
+        <h1 style="margin-top:8px">报价单</h1>
+        <div style="font-size:12px;color:#8a93ad;letter-spacing:.16em">QUOTATION</div>
+      </div>
+      <div class="meta">
+        <div>单号：<b id="p-no">-</b></div>
+        <div>日期：<b id="p-date">-</b></div>
+      </div>
+    </div>
+
+    <div class="parties">
+      <div><h4>报价方</h4><div id="p-company">-</div></div>
+      <div style="text-align:right"><h4>客户</h4><div id="p-customer">-</div></div>
+    </div>
+
+    <table class="q">
+      <thead><tr><th>项目 / 说明</th><th class="num">数量</th><th class="num">单价</th><th class="num">金额</th></tr></thead>
+      <tbody id="q-body"></tbody>
+    </table>
+
+    <div class="totals">
+      <div class="r"><span>小计</span><span id="p-sub">¥0.00</span></div>
+      <div class="r" id="disc-row"><span>优惠 (<span id="p-discrate">0</span>%)</span><span id="p-disc">-¥0.00</span></div>
+      <div class="r"><span>税额 (<span id="p-taxrate">0</span>%)</span><span id="p-tax">¥0.00</span></div>
+      <div class="r grand"><span>合计</span><span id="p-total">¥0.00</span></div>
+    </div>
+
+    <div class="note" id="p-note"></div>
+  </div>
+
+</div>
+
+<script src="../../assets/animations.js"></script>
+<script src="../../assets/ollama.js"></script>
+<script>
+const $ = (id) => document.getElementById(id);
+const SYM = { CNY: '¥', USD: '$', EUR: '€' };
+const LS_KEY = 'hf_quotes';
+let items = [];
+
+function money(n) {
+  const sym = SYM[$('f-currency') ? $('f-currency').value : 'CNY'] || '¥';
+  return sym + Number(n || 0).toLocaleString('zh-CN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function esc(s) { return String(s ?? '').replace(/[&<>"]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c])); }
+
+const DEMO = [
+  { name: '企业官网页面设计与开发', unit: '项', qty: 1, price: 3000 },
+  { name: 'Excel 客户数据自动汇总工具', unit: '项', qty: 1, price: 1200 },
+  { name: '服务器部署与调试', unit: '人天', qty: 2, price: 300 },
+];
+Ollama.mountBadge($('ol-status'));
+
+function renderItems() {
+  const wrap = $('items');
+  wrap.innerHTML = items.map((it, i) => `
+    <div class="item-row">
+      <input value="${esc(it.name)}" data-i="${i}" data-k="name" placeholder="项目名称" />
+      <input value="${esc(it.unit)}" data-i="${i}" data-k="unit" placeholder="单位" />
+      <input type="number" value="${it.qty}" data-i="${i}" data-k="qty" min="0" />
+      <input type="number" value="${it.price}" data-i="${i}" data-k="price" min="0" />
+      <div class="amt">${money(it.qty * it.price)}</div>
+      <button class="rm" data-rm="${i}" title="删除">✕</button>
+    </div>`).join('') || '<p class="dim" style="font-size:13px">暂无条目，点上方添加或让 AI 生成。</p>';
+  wrap.querySelectorAll('input').forEach(inp => inp.addEventListener('input', e => {
+    const i = +e.target.dataset.i, k = e.target.dataset.k;
+    items[i][k] = (k === 'name' || k === 'unit') ? e.target.value : (parseFloat(e.target.value) || 0);
+    renderItems(); renderQuote();
+  }));
+  wrap.querySelectorAll('[data-rm]').forEach(b => b.addEventListener('click', () => { items.splice(+b.dataset.rm, 1); renderItems(); renderQuote(); }));
+}
+
+function renderQuote() {
+  $('p-no').textContent = $('f-no').value || '-';
+  $('p-date').textContent = $('f-date').value || '-';
+  $('p-company').textContent = $('f-company').value || '-';
+  $('p-company-brand').textContent = $('f-company').value || '报价方';
+  $('p-customer').textContent = $('f-customer').value || '-';
+  $('p-note').textContent = $('f-note').value || '';
+  const tax = parseFloat($('f-tax').value) || 0, disc = parseFloat($('f-disc').value) || 0;
+  $('p-taxrate').textContent = tax; $('p-discrate').textContent = disc;
+
+  $('q-body').innerHTML = items.map(it => `
+    <tr>
+      <td>${esc(it.name) || '-'}${it.unit ? ' <span style="color:#8a93ad;font-size:12px">(' + esc(it.unit) + ')</span>' : ''}</td>
+      <td class="num">${it.qty}</td>
+      <td class="num">${money(it.price)}</td>
+      <td class="num">${money(it.qty * it.price)}</td>
+    </tr>`).join('');
+
+  const sub = items.reduce((s, it) => s + it.qty * it.price, 0);
+  const discAmt = sub * disc / 100;
+  const after = sub - discAmt;
+  const taxAmt = after * tax / 100;
+  $('p-sub').textContent = money(sub);
+  $('p-disc').textContent = '-' + money(discAmt);
+  $('p-tax').textContent = money(taxAmt);
+  $('p-total').textContent = money(after + taxAmt);
+  $('disc-row').style.display = disc ? '' : 'none';
+}
+function refresh() { renderItems(); renderQuote(); }
+
+/* ---------- 保存 / 载入 ---------- */
+function readQuotes() { try { return JSON.parse(localStorage.getItem(LS_KEY)) || []; } catch (e) { return []; } }
+function writeQuotes(list) { localStorage.setItem(LS_KEY, JSON.stringify(list)); }
+function currentQuote() {
+  return {
+    company: $('f-company').value, customer: $('f-customer').value, no: $('f-no').value,
+    date: $('f-date').value, currency: $('f-currency').value, tax: $('f-tax').value,
+    disc: $('f-disc').value, note: $('f-note').value, items: JSON.parse(JSON.stringify(items)),
+  };
+}
+function renderSaved() {
+  const list = readQuotes();
+  $('savedList').innerHTML = list.length ? list.map((q, i) => `
+    <div class="saved-item">
+      <span>${esc(q.name)} <span class="dim">· ${q.items.length} 项</span></span>
+      <span class="acts"><span class="lnk" data-load="${i}">载入</span><span class="lnk del" data-del="${i}">删除</span></span>
+    </div>`).join('') : '<p class="dim" style="font-size:12px">还没有保存的报价单。</p>';
+  $('savedList').querySelectorAll('[data-load]').forEach(el => el.addEventListener('click', () => applyQuote(readQuotes()[+el.dataset.load])));
+  $('savedList').querySelectorAll('[data-del]').forEach(el => el.addEventListener('click', () => {
+    const list = readQuotes(); list.splice(+el.dataset.del, 1); writeQuotes(list); renderSaved(); ui.toast('已删除', 'ok');
+  }));
+}
+function applyQuote(q) {
+  $('f-company').value = q.company; $('f-customer').value = q.customer; $('f-no').value = q.no;
+  $('f-date').value = q.date; $('f-currency').value = q.currency || 'CNY';
+  $('f-tax').value = q.tax; $('f-disc').value = q.disc; $('f-note').value = q.note;
+  items = JSON.parse(JSON.stringify(q.items || [])).map(it => ({ name: it.name || '', unit: it.unit || '', qty: it.qty || 0, price: it.price || 0 }));
+  refresh(); ui.toast('已载入报价单', 'ok');
+}
+$('saveBtn').addEventListener('click', () => {
+  const name = $('saveName').value.trim() || ($('f-customer').value + ' · ' + $('f-no').value);
+  const list = readQuotes();
+  list.unshift({ name, ...currentQuote() });
+  writeQuotes(list.slice(0, 30));
+  $('saveName').value = '';
+  renderSaved(); ui.toast('已保存', 'ok');
+});
+
+/* ---------- 基础交互 ---------- */
+$('addItem').addEventListener('click', () => { items.push({ name: '', unit: '项', qty: 1, price: 0 }); refresh(); });
+$('printBtn').addEventListener('click', () => window.print());
+$('resetBtn').addEventListener('click', () => { items = JSON.parse(JSON.stringify(DEMO)); refresh(); ui.toast('已重置', 'ok'); });
+$('jsonBtn').addEventListener('click', () => {
+  ui.download('报价单.json', JSON.stringify(currentQuote(), null, 2), 'application/json');
+});
+['f-company', 'f-customer', 'f-no', 'f-date', 'f-tax', 'f-disc', 'f-note'].forEach(id => $(id).addEventListener('input', renderQuote));
+$('f-currency').addEventListener('change', () => { renderItems(); renderQuote(); });
+
+/* ---------- AI 生成条目 ---------- */
+$('aiBtn').addEventListener('click', async () => {
+  const brief = $('aiBrief').value.trim();
+  if (!brief) { ui.toast('请先描述项目', 'err'); return; }
+  const btn = $('aiBtn'); btn.disabled = true; btn.innerHTML = '<span class="spin"></span> 生成中…';
+  let result = null, via = '本地规则';
+  try {
+    if (await Ollama.available()) {
+      result = await Ollama.json({
+        system: '你是软件外包报价助手。只输出 JSON，不要解释。',
+        prompt: `客户需求：${brief}\n\n请拆解为报价条目，返回 JSON：{"items":[{"name":"条目名称","unit":"项","qty":数量,"price":单价(整数,当地货币)}]}。条目控制在 2-5 条，价格符合国内小型外包行情。`
+      });
+      if (result && Array.isArray(result.items) && result.items.length) via = 'Ollama';
+    }
+  } catch (e) { ui.toast('AI 调用失败：' + e.message, 'err'); }
+
+  if (!result || !result.items) result = { items: ruleBrief(brief) };
+  items = result.items.map(it => ({ name: String(it.name || '服务项目'), unit: String(it.unit || '项'), qty: Number(it.qty) || 1, price: Number(it.price) || 0 }));
+  refresh();
+  ui.toast(`已生成 ${items.length} 条报价（${via}）`, 'ok');
+  btn.disabled = false; btn.innerHTML = '✨ 生成报价条目';
+});
+function ruleBrief(brief) {
+  const parts = brief.split(/[，,、+和及\/\n]+/).map(s => s.trim()).filter(Boolean);
+  const priceMap = [
+    [/网站|官网|落地页|前端|页面/, 2500], [/excel|表格|汇总|报表|数据/, 1200],
+    [/小程序|app|系统|后台|管理/, 4000], [/部署|服务器|上线|运维/, 500],
+    [/爬虫|采集|抓取/, 1500], [/ai|智能|模型|助手/, 2000], [/设计|ui|logo/, 800],
+  ];
+  return (parts.length ? parts : [brief]).map(p => {
+    const hit = priceMap.find(([re]) => re.test(p.toLowerCase()));
+    return { name: p, unit: '项', qty: 1, price: hit ? hit[1] : 800 };
+  });
+}
+
+document.getElementById('f-date').value = new Date().toISOString().slice(0, 10);
+items = JSON.parse(JSON.stringify(DEMO));
+renderSaved();
+refresh();
+</script>
+</body>
+</html>

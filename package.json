@@ -1,0 +1,16 @@
+{
+  "name": "ai-portfolio",
+  "version": "1.0.0",
+  "private": true,
+  "description": "AI 辅助开发作品集：网站 + 办公自动化工具 + 本地 AI（Ollama）+ FastAPI 后端",
+  "scripts": {
+    "test": "node tests/core.test.js && node tests/ui.test.js",
+    "test:core": "node tests/core.test.js",
+    "test:ui": "node tests/ui.test.js",
+    "serve": "python -m http.server 8080",
+    "backend": "uvicorn main:app --reload --port 8000 --app-dir excel-backend"
+  },
+  "devDependencies": {
+    "puppeteer-core": "^23.0.0"
+  }
+}

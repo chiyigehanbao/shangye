@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>AI 工具后端 · 表格处理 + 文档提取（FastAPI + Pandas + SQLite + Ollama）</title>
+<link rel="stylesheet" href="./style.css" />
+<style>
+  .overlay { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center;
+    background: radial-gradient(60% 60% at 50% 20%, rgba(99,102,241,.25), transparent 70%), rgba(7,11,24,.92); backdrop-filter: blur(6px); }
+  .login-card { width: min(400px, 92%); }
+  .topbar { position: sticky; top: 0; z-index: 40; backdrop-filter: blur(14px); background: rgba(7,11,24,.8); border-bottom: 1px solid var(--line); }
+  .topbar .inner { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+  .page { padding: 26px 0 80px; }
+  .tabs button.on { background: var(--grad); color: #05142a; border: none; }
+  .drop { border: 2px dashed var(--line-strong); border-radius: var(--radius); padding: 34px; text-align: center; background: rgba(255,255,255,.02); transition: all .22s; cursor: pointer; }
+  .drop:hover, .drop.over { border-color: var(--i2); background: rgba(34,211,238,.07); }
+  .opts { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; align-items: end; }
+  .stats { display: grid; grid-template-columns: repeat(5,1fr); gap: 14px; margin: 6px 0 22px; }
+  .ai-card { border-color: rgba(168,85,247,.35); background: linear-gradient(120deg, rgba(99,102,241,.10), rgba(168,85,247,.08)); }
+  .example { cursor: pointer; } .example:hover { border-color: var(--i2); color: var(--text); }
+  .report { white-space: pre-wrap; line-height: 1.85; font-size: 14.5px; }
+  .pill-teal { font-family: var(--mono); font-size: 12px; color: var(--i2); border: 1px solid var(--line); border-radius: 8px; padding: 2px 10px; }
+  .job { display: flex; align-items: center; justify-content: space-between; padding: 10px 14px; border: 1px solid var(--line); border-radius: 10px; margin-bottom: 8px; font-size: 13.5px; }
+  .job .acts { display: flex; gap: 10px; align-items: center; }
+  .job .lnk { color: var(--i2); cursor: pointer; font-size: 12.5px; }
+  .job .lnk.del { color: var(--red); }
+  @media (max-width: 900px) { .opts { grid-template-columns: repeat(2,1fr); } .stats { grid-template-columns: repeat(2,1fr); } }
+</style>
+</head>
+<body>
+
+<!-- 登录层 -->
+<div class="overlay" id="login">
+  <div class="card pad login-card">
+    <div class="eyebrow">AI 工具后端</div>
+    <h2 style="margin:8px 0 4px">登录</h2>
+    <p class="muted" style="font-size:13px">默认账号 admin / admin123（可用环境变量覆盖）。</p>
+    <div style="display:grid;gap:12px;margin-top:16px">
+      <div><label>用户名</label><input id="lg-user" value="admin" autocomplete="username" /></div>
+      <div><label>密码</label><input id="lg-pass" type="password" value="admin123" autocomplete="current-password" /></div>
+      <button class="btn btn-primary btn-block" id="lg-btn">登录</button>
+      <div id="lg-err" class="dim" style="font-size:13px;min-height:18px"></div>
+    </div>
+  </div>
+</div>
+
+<!-- 主应用 -->
+<div id="app" class="hidden">
+  <div class="topbar">
+    <div class="container inner">
+      <b>🧰 AI 工具后端</b>
+      <div class="row">
+        <span id="health" class="badge"><span class="dot off"></span> 检测中…</span>
+        <span class="badge cyan" id="whoami">-</span>
+        <button class="btn btn-sm btn-ghost" id="logoutBtn">退出</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="container page">
+    <div class="row tabs" style="gap:8px;margin-bottom:18px">
+      <button class="btn btn-sm on" data-tab="excel">📊 表格处理</button>
+      <button class="btn btn-sm" data-tab="doc">🔎 文档提取</button>
+    </div>
+
+    <!-- ============ 表格处理 ============ -->
+    <div id="excelFlow">
+      <div class="row between" style="align-items:flex-start">
+        <div style="max-width:660px">
+          <div class="eyebrow">Excel 自动化 · 真实后端</div>
+          <h2 class="section-title" style="margin-top:6px">上传 → 清洗 → 汇总 → 导出（带登录与历史）</h2>
+          <p class="muted">服务端 Pandas 处理，SQLite 持久化任务历史，AI 由服务端调用本地 Ollama。</p>
+        </div>
+        <button class="btn btn-ghost" id="tplBtn">⬇ 下载示例表格</button>
+      </div>
+
+      <div class="drop" id="drop" style="margin-top:18px">
+        <div style="font-size:36px">📄</div>
+        <p style="margin:10px 0 4px"><b>点击选择</b> 或把文件拖到这里</p>
+        <p class="dim" style="font-size:13px;margin:0">支持 .xlsx .xls .csv</p>
+        <input type="file" id="file" accept=".xlsx,.xls,.csv" class="hidden" />
+      </div>
+
+      <div id="panel" class="hidden" style="margin-top:22px">
+        <div class="card pad" style="margin-bottom:18px">
+          <div class="row between"><div class="eyebrow">处理选项</div><span class="pill-teal" id="fileTag">-</span></div>
+          <div class="opts" style="margin-top:16px">
+            <label class="switch"><input type="checkbox" id="optEmpty" checked /><span class="track"></span> 删除空行</label>
+            <label class="switch"><input type="checkbox" id="optDup" checked /><span class="track"></span> 删除重复行</label>
+            <div><label>汇总分组列</label><select id="groupCol"><option value="">不使用汇总</option></select></div>
+            <div style="display:grid;grid-template-columns:1fr 100px;gap:10px">
+              <div><label>数值列</label><select id="valueCol"></select></div>
+              <div><label>方式</label><select id="agg">
+                <option value="sum">求和</option><option value="count">计数</option>
+                <option value="avg">平均</option><option value="max">最大</option><option value="min">最小</option>
+              </select></div>
+            </div>
+          </div>
+          <div class="row" style="margin-top:16px">
+            <button class="btn btn-primary" id="runBtn">开始处理</button>
+            <button class="btn" id="exportBtn" disabled>⬇ 导出结果 Excel</button>
+          </div>
+        </div>
+
+        <div class="card pad ai-card" style="margin-bottom:18px">
+          <div class="eyebrow" style="color:#d8b4fe">AI 助手 · 服务端 Ollama</div>
+          <div class="row" style="gap:10px;margin-top:12px">
+            <input id="aiInput" placeholder="例如：按门店汇总金额" style="flex:1;min-width:220px" />
+            <button class="btn btn-primary" id="aiRun">✨ 解析并执行</button>
+            <button class="btn" id="aiReport">AI 生成分析报告</button>
+          </div>
+          <div class="row" style="margin-top:12px;gap:8px">
+            <span class="dim" style="font-size:12px">试试：</span>
+            <span class="chip example">按门店汇总金额</span>
+            <span class="chip example">统计每个商品的订单数</span>
+          </div>
+          <div id="aiOut" style="margin-top:14px"></div>
+        </div>
+
+        <div id="results" class="hidden">
+          <div class="eyebrow">结果</div>
+          <div class="stats" id="stats"></div>
+          <div class="grid grid-2">
+            <div><h3 style="margin:0 0 10px">汇总表</h3><div class="table-scroll" id="summaryWrap"></div></div>
+            <div><h3 style="margin:0 0 10px">清洗后数据（前 100 行）</h3><div class="table-scroll" id="cleanWrap"></div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="card pad" style="margin-top:22px">
+        <div class="row between"><div class="eyebrow">📁 表格历史</div><button class="btn btn-sm" id="refreshJobs">刷新</button></div>
+        <div class="row" style="gap:8px;margin-top:10px;align-items:center">
+          <input id="jobSearch" placeholder="搜索文件名…" style="max-width:260px" />
+          <button class="btn btn-sm" id="jobSearchBtn">搜索</button>
+          <span class="spacer"></span>
+          <button class="btn btn-sm" id="jobPrev">‹ 上一页</button>
+          <span class="chip" id="jobPage">1 / 1</span>
+          <button class="btn btn-sm" id="jobNext">下一页 ›</button>
+        </div>
+        <div id="jobsList" style="margin-top:12px"><p class="dim" style="font-size:13px">暂无记录。</p></div>
+      </div>
+
+      <h3 style="margin:24px 0 10px">原始数据预览</h3>
+      <div class="table-scroll" id="previewWrap"><p class="dim" style="padding:16px">暂无数据</p></div>
+
+      <h3 style="margin:24px 0 10px">日志</h3>
+      <div class="log" id="log"><div><span class="time">[就绪]</span> 等待文件…</div></div>
+    </div>
+
+    <!-- ============ 文档提取 ============ -->
+    <div id="docFlow" class="hidden">
+      <div style="max-width:660px;margin-bottom:16px">
+        <div class="eyebrow">文档字段提取 · 真实后端</div>
+        <h2 class="section-title" style="margin-top:6px">上传文本/PDF，提取字段并留档</h2>
+        <p class="muted">后端用规则 + 本地 Ollama 提取，结果持久化；可多文档对齐导出 Excel。图片请使用前端 OCR 页。</p>
+      </div>
+
+      <div class="card pad" style="margin-bottom:16px">
+        <div class="drop" id="docDrop">📄 点击或拖入 .txt / .md / .csv / .pdf / 图片（图片需视觉模型）<input type="file" id="docFile" accept=".txt,.md,.csv,.pdf,image/*" class="hidden" /></div>
+        <div style="margin-top:12px"><label>或粘贴文本</label><textarea id="docText" rows="4" placeholder="粘贴合同 / 邮件文本…"></textarea></div>
+        <div style="margin-top:12px"><label>要提取的字段（留空则做规则提取）</label><input id="docFields" value="甲方,乙方,合同金额,签订日期,联系电话" /></div>
+        <div class="row" style="margin-top:14px;gap:10px">
+          <button class="btn btn-primary" id="docRun">✨ 提取并保存</button>
+          <span class="chip" id="docFileTag">未选择文件</span>
+        </div>
+      </div>
+
+      <div class="card pad" style="margin-bottom:16px">
+        <div class="row between"><div class="eyebrow">⚙️ 批量异步队列（大文件 / 多文件）</div><span class="chip" id="queueStat">空闲</span></div>
+        <p class="dim" style="font-size:12.5px;margin:8px 0 0">后台线程逐个处理，不阻塞页面；完成后自动进入文档历史。</p>
+        <div class="row" style="gap:10px;margin-top:12px;align-items:center">
+          <input type="file" id="qFile" multiple accept=".txt,.md,.csv,.pdf,image/*" style="width:auto" />
+          <select id="qPriority" style="width:auto"><option value="0">普通优先级</option><option value="10">高优先级</option></select>
+          <button class="btn btn-primary" id="qRun">加入队列</button>
+          <span class="chip" id="qCount">0 个任务</span>
+        </div>
+        <div id="qTasks" style="margin-top:12px"><p class="dim" style="font-size:13px">暂无任务。</p></div>
+      </div>
+
+      <div class="card pad" style="margin-bottom:16px">
+        <div class="row between"><div class="eyebrow">提取结果</div><span class="chip" id="docVia"></span></div>
+        <div class="table-scroll" id="docResultsWrap" style="margin-top:12px"><p class="dim" style="padding:16px">暂无</p></div>
+      </div>
+
+      <div class="card pad">
+        <div class="row between"><div class="eyebrow">📄 文档历史</div>
+          <div class="row" style="gap:8px"><span class="chip" id="fileStats">原始文件 0 · 0 KB</span><button class="btn btn-sm" id="docExport">导出选中为 Excel</button><button class="btn btn-sm" id="docRefresh">刷新</button></div>
+        </div>
+        <div class="row" style="gap:8px;margin-top:10px;align-items:center">
+          <input id="docSearch" placeholder="搜索文件名/内容…" style="max-width:260px" />
+          <button class="btn btn-sm" id="docSearchBtn">搜索</button>
+          <span class="spacer"></span>
+          <button class="btn btn-sm" id="docPrev">‹ 上一页</button>
+          <span class="chip" id="docPage">1 / 1</span>
+          <button class="btn btn-sm" id="docNext">下一页 ›</button>
+        </div>
+        <div id="docJobsList" style="margin-top:12px"><p class="dim" style="font-size:13px">暂无记录。</p></div>
+      </div>
+
+      <h3 style="margin:22px 0 10px">文档日志</h3>
+      <div class="log" id="docLog"></div>
+    </div>
+  </div>
+</div>
+
+<script src="./animations.js"></script>
+<script src="./core.js"></script>
+<script src="./app.js"></script>
+</body>
+</html>

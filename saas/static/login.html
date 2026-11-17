@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="dark">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>登录 · FlowDesk 流序</title>
+<link rel="icon" href="/favicon.svg" type="image/svg+xml" />
+<link rel="stylesheet" href="/static/style.css?v=5" />
+<script>try{var t=localStorage.getItem('fd_theme');if(t)document.documentElement.dataset.theme=t}catch(e){}</script>
+</head>
+<body>
+
+<div class="auth-wrap">
+  <aside class="auth-left">
+    <div>
+      <a class="brand" href="/">
+        <span class="mark"><svg viewBox="0 0 64 64" fill="none"><path d="M16 20h20a10 10 0 0 1 0 20H24" stroke="#05142a" stroke-width="7" stroke-linecap="round"/><path d="M16 44h12" stroke="#05142a" stroke-width="7" stroke-linecap="round"/></svg></span>
+        <span>FlowDesk <small>流序 · 办公自动化</small></span>
+      </a>
+      <h1>把重复工作<br /><span class="text-grad">交给 AI</span>，<br />把时间留给判断。</h1>
+      <p class="lead">Excel、合同、报价、销售数据，四个场景共享一套账号、配额与审计。登录后所有示例数据都已就绪。</p>
+      <div class="l-list" style="margin-top:26px">
+        <div class="item"><div class="tick">✓</div><div><b>真实后端与数据库</b><span>不是静态页面，所有任务可回溯、可导出。</span></div></div>
+        <div class="item"><div class="tick">✓</div><div><b>多租户与配额</b><span>工作区隔离，套餐与用量实时计量。</span></div></div>
+        <div class="item"><div class="tick">✓</div><div><b>AI 三通道降级</b><span>云端 API → 本地模型 → 规则引擎。</span></div></div>
+      </div>
+    </div>
+    <div class="quote">
+      <div style="font-size:13px;color:var(--soft);line-height:1.8">“面试时我不需要解释这是不是一个 Demo——登录进去，看历史记录和审计日志就够了。”</div>
+      <div style="font-size:11.5px;color:var(--dim);margin-top:10px">FlowDesk 产品说明</div>
+    </div>
+  </aside>
+
+  <main class="auth-right">
+    <div class="auth-card">
+      <div class="row between" style="margin-bottom:22px">
+        <a class="link-btn" href="/">← 返回首页</a>
+        <button class="btn btn-icon btn-ghost" id="themeBtn" title="切换主题" aria-label="切换主题" data-theme-icon>☀</button>
+      </div>
+
+      <h2 id="authTitle">欢迎回来</h2>
+      <p class="sub" id="authSub">登录你的工作区，继续处理今天的任务。</p>
+
+      <div class="tabs auth-tabs" id="authTabs">
+        <button class="on" data-mode="login">登录</button>
+        <button data-mode="register">注册</button>
+      </div>
+
+      <form id="authForm" autocomplete="on">
+        <div class="form-grid">
+          <div id="registerFields" class="hidden">
+            <div class="form-grid">
+              <div><label for="name">昵称</label><input id="name" name="name" placeholder="怎么称呼你" autocomplete="name" /></div>
+              <div><label for="workspace">工作区名称 <span class="dim" style="font-weight:400">（可选）</span></label><input id="workspace" name="workspace" placeholder="例如：星野工作室" /></div>
+            </div>
+          </div>
+          <div><label for="email">邮箱</label><input id="email" name="email" type="email" placeholder="you@company.com" autocomplete="email" required /></div>
+          <div>
+            <label for="password">密码</label>
+            <div style="position:relative">
+              <input id="password" name="password" type="password" placeholder="至少 8 位，含字母和数字" autocomplete="current-password" required style="padding-right:44px" />
+              <button type="button" class="link-btn" id="pwToggle" style="position:absolute;right:12px;top:50%;transform:translateY(-50%)">显示</button>
+            </div>
+          </div>
+        </div>
+        <div class="auth-err" id="authErr"></div>
+        <button class="btn btn-primary btn-block btn-lg" id="submitBtn" type="submit">登录</button>
+      </form>
+
+      <div class="auth-demo">
+        <div class="row between">
+          <div>演示账号 <b>demo@flowdesk.dev</b> / <b>Demo@12345</b></div>
+          <button class="link-btn" id="demoFill">填入</button>
+        </div>
+        <div style="margin-top:6px">演示工作区已预置报价单、合同抽取记录、销售看板与用量数据。</div>
+      </div>
+
+      <p class="dim" style="font-size:11.5px;margin-top:18px;line-height:1.8">
+        注册即表示你同意演示环境的使用条款。所有数据仅用于产品展示，可随时在工作区设置中删除。
+      </p>
+    </div>
+  </main>
+</div>
+
+<script src="/static/assets/common.js?v=5"></script>
+<script src="/static/assets/auth.js?v=5"></script>
+</body>
+</html>

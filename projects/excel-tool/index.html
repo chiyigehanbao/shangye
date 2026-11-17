@@ -1,0 +1,421 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Excel 自动化与报表生成 · AI 版</title>
+<link rel="stylesheet" href="../../assets/style.css" />
+<script src="../../assets/vendor/xlsx.full.min.js"></script>
+<style>
+  .topbar { position: sticky; top: 0; z-index: 40; backdrop-filter: blur(14px); background: rgba(7,11,24,.8); border-bottom: 1px solid var(--line); }
+  .topbar .inner { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+  .topbar .back { color: var(--text-soft); font-size: 14px; }
+  .page { padding: 30px 0 80px; }
+  .drop { border: 2px dashed var(--line-strong); border-radius: var(--radius); padding: 42px; text-align: center; background: rgba(255,255,255,.02); transition: all .22s; cursor: pointer; }
+  .drop:hover, .drop.over { border-color: var(--i2); background: rgba(34,211,238,.07); }
+  .opts { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; align-items: end; }
+  .stats { display: grid; grid-template-columns: repeat(5,1fr); gap: 14px; margin: 6px 0 22px; }
+  .ai-card { border-color: rgba(168,85,247,.35); background: linear-gradient(120deg, rgba(99,102,241,.10), rgba(168,85,247,.08)); }
+  .example { cursor: pointer; } .example:hover { border-color: var(--i2); color: var(--text); }
+  .report { white-space: pre-wrap; line-height: 1.85; font-size: 14.5px; }
+  .pill-teal { font-family: var(--mono); font-size: 12px; color: var(--i2); border: 1px solid var(--line); border-radius: 8px; padding: 2px 10px; }
+  .mini-tag { font-size: 11px; padding: 1px 8px; border-radius: 999px; border: 1px solid var(--line); color: var(--text-soft); }
+  @media (max-width: 900px) { .opts { grid-template-columns: repeat(2,1fr); } .stats { grid-template-columns: repeat(2,1fr); } }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="container inner">
+    <b>📊 Excel 自动化与报表生成</b>
+    <div class="row"><div id="ol-status"></div><a class="back" href="../../index.html">← 返回作品集</a></div>
+  </div>
+</div>
+
+<div class="container page">
+
+  <div class="row between" style="align-items:flex-start">
+    <div style="max-width:660px">
+      <div class="eyebrow">Step 01 · 导入数据</div>
+      <h2 class="section-title" style="margin-top:6px">上传表格，自动完成清洗、过滤、排序与汇总</h2>
+      <p class="muted">支持 .xlsx .xls .csv。处理在浏览器本地完成，文件不外传；仅在使用 AI 时把列名与少量样例发往本机 Ollama。</p>
+    </div>
+    <button class="btn btn-ghost" id="tplBtn">⬇ 下载示例表格</button>
+  </div>
+
+  <div class="drop" id="drop" data-reveal style="margin-top:18px">
+    <div style="font-size:40px">📄</div>
+    <p style="margin:10px 0 4px"><b>点击选择</b> 或把文件拖到这里</p>
+    <p class="dim" style="font-size:13px;margin:0">支持 .xlsx .xls .csv</p>
+    <input type="file" id="file" accept=".xlsx,.xls,.csv" class="hidden" />
+  </div>
+
+  <div id="panel" class="hidden" style="margin-top:24px">
+
+    <div class="card pad" style="margin-bottom:20px">
+      <div class="eyebrow">Step 02 · 列分析（自动识别）</div>
+      <div class="table-scroll" id="colStatsWrap" style="margin-top:12px"></div>
+    </div>
+
+    <div class="card pad" style="margin-bottom:20px">
+      <div class="row between"><div class="eyebrow">Step 03 · 处理选项</div><span class="pill-teal" id="fileTag">-</span></div>
+      <div class="opts" style="margin-top:16px">
+        <label class="switch"><input type="checkbox" id="optEmpty" checked /><span class="track"></span> 删除空行</label>
+        <label class="switch"><input type="checkbox" id="optDup" checked /><span class="track"></span> 删除重复行</label>
+        <div><label>汇总分组列</label><select id="groupCol"><option value="">不使用汇总</option></select></div>
+        <div style="display:grid;grid-template-columns:1fr 100px;gap:10px">
+          <div><label>数值列</label><select id="valueCol"></select></div>
+          <div><label>方式</label><select id="agg">
+            <option value="sum">求和</option><option value="count">计数</option>
+            <option value="avg">平均</option><option value="max">最大</option><option value="min">最小</option>
+          </select></div>
+        </div>
+      </div>
+      <div class="opts" style="margin-top:16px;grid-template-columns:2fr 1fr 1fr">
+        <div><label>关键字过滤（可选）</label><input id="filterKw" placeholder="仅保留包含该文字的行，如：北京" /></div>
+        <div><label>排序列</label><select id="sortCol"><option value="">不排序</option></select></div>
+        <div><label>排序方向</label><select id="sortDir"><option value="asc">升序</option><option value="desc">降序</option></select></div>
+      </div>
+      <div class="row" style="margin-top:18px">
+        <button class="btn btn-primary" id="runBtn">开始处理</button>
+        <button class="btn" id="exportBtn" disabled>⬇ 导出结果 Excel</button>
+        <button class="btn btn-ghost" id="resetBtn">恢复默认选项</button>
+      </div>
+    </div>
+
+    <div class="card pad ai-card" style="margin-bottom:20px">
+      <div class="eyebrow" style="color:#d8b4fe">Step 04 · AI 助手（本地 Ollama）</div>
+      <p class="muted" style="font-size:13px;margin:12px 0">用一句话描述汇总需求，AI 解析成规则并执行；Ollama 离线时自动用关键词规则兜底。</p>
+      <div class="row" style="gap:10px">
+        <input id="aiInput" placeholder="例如：按门店汇总金额" style="flex:1;min-width:220px" />
+        <button class="btn btn-primary" id="aiRun">✨ 解析并执行</button>
+        <button class="btn" id="aiReport">AI 生成分析报告</button>
+      </div>
+      <div class="row" id="aiExamples" style="margin-top:12px;gap:8px">
+        <span class="dim" style="font-size:12px">试试：</span>
+        <span class="chip example">按门店汇总金额</span>
+        <span class="chip example">统计每个商品的订单数</span>
+        <span class="chip example">求各门店的平均金额</span>
+      </div>
+      <div id="aiOut" style="margin-top:14px"></div>
+    </div>
+
+    <div id="results" class="hidden">
+      <div class="eyebrow">Step 05 · 结果</div>
+      <div class="stats" id="stats"></div>
+      <div class="grid grid-2">
+        <div><h3 style="margin:0 0 10px">汇总表</h3><div class="table-scroll" id="summaryWrap"></div></div>
+        <div><h3 style="margin:0 0 10px">清洗后数据（前 100 行）</h3><div class="table-scroll" id="cleanWrap"></div></div>
+      </div>
+    </div>
+
+  </div>
+
+  <h3 style="margin:26px 0 10px">处理日志</h3>
+  <div class="log" id="log"><div><span class="time">[就绪]</span> 等待文件…</div></div>
+
+  <h3 style="margin:26px 0 10px">原始数据预览</h3>
+  <div class="table-scroll" id="previewWrap"><p class="dim" style="padding:16px">暂无数据</p></div>
+
+</div>
+
+<script src="../../assets/animations.js"></script>
+<script src="../../assets/core.js"></script>
+<script src="../../assets/ollama.js"></script>
+<script>
+const state = { headers: [], rows: [], result: null };
+const $ = (id) => document.getElementById(id);
+const logEl = $('log');
+const norm = HF.norm;
+
+function log(msg, type = '') {
+  const t = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+  logEl.insertAdjacentHTML('beforeend', `<div><span class="time">[${t}]</span> <span class="${type}">${msg}</span></div>`);
+  logEl.scrollTop = logEl.scrollHeight;
+}
+function esc(s) { return String(s ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
+
+function renderTable(wrap, headers, rows, limit = 100) {
+  if (!headers || !rows || !rows.length) { wrap.innerHTML = '<p class="dim" style="padding:16px">无数据</p>'; return; }
+  let html = '<table class="data"><thead><tr>' + headers.map(h => `<th>${esc(h)}</th>`).join('') + '</tr></thead><tbody>';
+  rows.slice(0, limit).forEach(r => { html += '<tr>' + headers.map((_, i) => `<td>${esc(r[i])}</td>`).join('') + '</tr>'; });
+  wrap.innerHTML = html + '</tbody></table>';
+}
+
+function renderColumnStats() {
+  const stats = HF.columnStats(state.headers, state.rows);
+  const typeColor = { 数值: 'green', 日期: 'cyan', 文本: '' };
+  let html = '<table class="data"><thead><tr><th>列名</th><th>类型</th><th>非空</th><th>去重值</th></tr></thead><tbody>';
+  stats.forEach(s => {
+    html += `<tr><td>${esc(s.name)}</td><td><span class="mini-tag" style="color:var(--text)">${s.type}</span></td><td>${s.nonEmpty}</td><td>${s.distinct}</td></tr>`;
+  });
+  $('colStatsWrap').innerHTML = html + '</tbody></table>';
+}
+
+function fillSelectors() {
+  const opts = state.headers.map((h, i) => `<option value="${i}">${esc(h)}</option>`).join('');
+  $('groupCol').innerHTML = '<option value="">不使用汇总</option>' + opts;
+  $('valueCol').innerHTML = opts;
+  $('sortCol').innerHTML = '<option value="">不排序</option>' + opts;
+  // 智能默认：金额列作为数值列，文本列作为分组列
+  const d = HF.detectColumns(state.headers, state.rows);
+  $('valueCol').value = String(d.amtCol);
+  $('groupCol').value = String(d.catCol);
+}
+
+function loadWorkbook(data, name) {
+  const wb = XLSX.read(data, { type: typeof data === 'string' ? 'string' : 'array' });
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
+  if (!aoa.length) { log('文件为空，无法处理', 'err'); return; }
+  state.headers = aoa[0].map((h, i) => norm(h) || `列${i + 1}`);
+  state.rows = aoa.slice(1);
+  state.result = null;
+  $('exportBtn').disabled = true;
+  $('results').classList.add('hidden');
+  $('panel').classList.remove('hidden');
+  $('fileTag').textContent = name;
+  fillSelectors();
+  renderColumnStats();
+  renderTable($('previewWrap'), state.headers, state.rows, 100);
+  log(`已读取 <b>${esc(name)}</b>：${state.headers.length} 列 / ${state.rows.length} 行`, 'ok');
+  ui.toast('文件已载入', 'ok');
+  window.UIInit();
+}
+
+/* ---------- 文件读取 ---------- */
+$('drop').addEventListener('click', () => $('file').click());
+$('file').addEventListener('change', e => { if (e.target.files[0]) readFile(e.target.files[0]); });
+['dragover', 'dragenter'].forEach(ev => $('drop').addEventListener(ev, e => { e.preventDefault(); $('drop').classList.add('over'); }));
+['dragleave', 'drop'].forEach(ev => $('drop').addEventListener(ev, e => { e.preventDefault(); $('drop').classList.remove('over'); }));
+$('drop').addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) readFile(f); });
+
+function readFile(file) {
+  const isCsv = /\.csv$/i.test(file.name);
+  const reader = new FileReader();
+  reader.onload = (e) => {
+    try { loadWorkbook(isCsv ? e.target.result : new Uint8Array(e.target.result), file.name); }
+    catch (err) { log('解析失败：' + esc(err.message), 'err'); ui.toast('文件解析失败', 'err'); }
+  };
+  reader.onerror = () => log('读取文件失败', 'err');
+  isCsv ? reader.readAsText(file, 'utf-8') : reader.readAsArrayBuffer(file);
+}
+
+/* ---------- 示例 ---------- */
+function sampleData() {
+  return [
+    ['日期', '门店', '商品', '数量', '金额'],
+    ['2026-01-05', '北京店', '拿铁', '3', '90'],
+    ['2026-01-05', '上海店', '美式', '2', '50'],
+    ['2026-01-06', '北京店', '拿铁', '3', '90'],
+    ['', '', '', '', ''],
+    ['2026-01-06', '广州店', '蛋糕', '1', '40'],
+    ['2026-01-06', '上海店', '美式', '2', '50'],
+    ['2026-01-07', '北京店', '蛋糕', '4', '160'],
+    ['2026-01-07', '广州店', '拿铁', '1', '30'],
+  ];
+}
+$('tplBtn').addEventListener('click', () => {
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sampleData()), '销售流水');
+  XLSX.writeFile(wb, '示例销售数据.xlsx');
+  log('已生成示例表格，可直接拖入', 'ok');
+});
+
+/* ---------- 核心处理 ---------- */
+function process(groupIdx, valueIdx, agg) {
+  if (!state.headers.length) return;
+  const removeEmpty = $('optEmpty').checked;
+  const removeDup = $('optDup').checked;
+  const gIdx = groupIdx ?? $('groupCol').value;
+  const vIdx = valueIdx ?? $('valueCol').value;
+  const aggType = agg ?? $('agg').value;
+  const kw = ($('filterKw').value || '').trim();
+  const sortCol = $('sortCol').value;
+  const sortDir = $('sortDir').value;
+
+  log('开始处理…');
+  const cleaned = HF.cleanRows(state.rows, { removeEmpty, removeDup });
+  if (cleaned.stats.removedEmpty) log(`删除空行：${cleaned.stats.removedEmpty} 行`, 'warn');
+  if (cleaned.stats.removedDup) log(`删除重复行：${cleaned.stats.removedDup} 行`, 'warn');
+
+  let rows = cleaned.rows;
+  if (kw) {
+    const before = rows.length;
+    rows = rows.filter(r => r.some(c => norm(c).includes(kw)));
+    log(`关键字过滤「${esc(kw)}」：${before} → ${rows.length} 行`, 'warn');
+  }
+
+  let summaryHeaders = null, summaryRows = [];
+  const aggRes = HF.aggregate(rows, gIdx, vIdx, aggType);
+  if (aggRes) {
+    summaryHeaders = [state.headers[+gIdx], `合计(${aggRes.header})`];
+    summaryRows = aggRes.rows.map(([k, v]) => [k, aggType === 'count' ? String(v) : HF.toNumberFmt(v, 2)]);
+    log(`按「${esc(state.headers[+gIdx])}」对「${vIdx === '' ? '行数' : esc(state.headers[+vIdx])}」${aggRes.header}：${summaryRows.length} 个分组`, 'ok');
+  } else {
+    log('未启用汇总（可选择分组列）');
+  }
+
+  let cleanRows = rows;
+  if (sortCol !== '') {
+    const si = +sortCol;
+    cleanRows = rows.slice().sort((a, b) => {
+      const na = norm(a[si]), nb = norm(b[si]);
+      const numeric = HF.isNumericCell(na) && HF.isNumericCell(nb);
+      let c = numeric ? HF.toNum(na) - HF.toNum(nb) : na.localeCompare(nb, 'zh');
+      return sortDir === 'desc' ? -c : c;
+    });
+    log(`按「${esc(state.headers[si])}」${sortDir === 'desc' ? '降序' : '升序'}排序`, 'ok');
+  }
+
+  state.result = {
+    headers: state.headers, cleanRows, summaryHeaders, summaryRows,
+    originalCount: cleaned.stats.original, removedEmpty: cleaned.stats.removedEmpty, removedDup: cleaned.stats.removedDup,
+  };
+
+  $('stats').innerHTML = `
+    <div class="stat"><b>${cleaned.stats.original}</b><span>原始行数</span></div>
+    <div class="stat"><b style="color:#6ee7b7">${cleanRows.length}</b><span>输出行数</span></div>
+    <div class="stat"><b style="color:#fcd34d">${cleaned.stats.removedEmpty}</b><span>删除空行</span></div>
+    <div class="stat"><b style="color:#fcd34d">${cleaned.stats.removedDup}</b><span>删除重复</span></div>
+    <div class="stat"><b style="color:#a5b4fc">${summaryRows.length}</b><span>汇总分组</span></div>`;
+  renderTable($('summaryWrap'), summaryHeaders || ['（未启用汇总）'], summaryHeaders ? summaryRows : []);
+  renderTable($('cleanWrap'), state.headers, cleanRows, 100);
+  $('results').classList.remove('hidden');
+  $('exportBtn').disabled = false;
+  log('处理完成，可导出结果', 'ok');
+  window.UIInit();
+}
+$('runBtn').addEventListener('click', () => process());
+$('resetBtn').addEventListener('click', () => {
+  $('optEmpty').checked = true; $('optDup').checked = true;
+  $('filterKw').value = ''; $('sortCol').value = ''; $('sortDir').value = 'asc';
+  fillSelectors();
+  ui.toast('已恢复默认选项', 'ok');
+});
+
+/* ---------- 导出 ---------- */
+$('exportBtn').addEventListener('click', () => {
+  if (!state.result) return;
+  const r = state.result;
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([r.headers, ...r.cleanRows]), '清洗后数据');
+  if (r.summaryHeaders) XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([r.summaryHeaders, ...r.summaryRows]), '汇总');
+  XLSX.writeFile(wb, '处理结果.xlsx');
+  log('已导出「处理结果.xlsx」', 'ok');
+  ui.toast('已导出 Excel', 'ok');
+});
+
+/* =========================================================
+   AI 助手
+   ========================================================= */
+Ollama.mountBadge($('ol-status'));
+document.querySelectorAll('.example').forEach(el => el.addEventListener('click', () => { $('aiInput').value = el.textContent; }));
+$('aiRun').addEventListener('click', aiCommand);
+$('aiInput').addEventListener('keydown', e => { if (e.key === 'Enter') aiCommand(); });
+$('aiReport').addEventListener('click', aiReport);
+
+function findHeaderIndex(name) {
+  if (!name) return -1;
+  const n = String(name).toLowerCase().trim();
+  let i = state.headers.findIndex(h => h.toLowerCase() === n);
+  if (i < 0) i = state.headers.findIndex(h => h.toLowerCase().includes(n) || n.includes(h.toLowerCase()));
+  return i;
+}
+
+async function aiCommand() {
+  const q = $('aiInput').value.trim();
+  if (!q) { ui.toast('请先输入指令', 'err'); return; }
+  $('aiOut').innerHTML = '';
+  const btn = $('aiRun');
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> 解析中…';
+
+  let plan = null, via = '规则';
+  try {
+    if (await Ollama.available()) {
+      log('调用本地 Ollama 解析指令…');
+      const cols = state.headers.join(' | ');
+      const sample = state.rows.slice(0, 5).map(r => r.join(' | ')).join('\n');
+      plan = await Ollama.json({
+        system: '你是数据表格处理助手。只输出 JSON，不要解释。',
+        prompt: `表格列名: ${cols}\n数据样例:\n${sample}\n\n用户的处理指令: "${q}"\n\n请返回 JSON，字段: {"groupBy":"分组列名","valueColumn":"数值列名或空","agg":"sum|count|avg|max|min"}。groupBy/valueColumn 必须是上面出现过的列名。`
+      });
+      if (plan && plan.groupBy) via = 'Ollama';
+    }
+  } catch (e) { log('AI 调用失败：' + esc(e.message), 'err'); }
+
+  if (!plan || !plan.groupBy) { plan = HF.ruleParseCommand(state.headers, q); }
+
+  const gi = findHeaderIndex(plan.groupBy);
+  const vi = findHeaderIndex(plan.valueColumn);
+  const agg = HF.AGGS.includes(plan.agg) ? plan.agg : 'sum';
+
+  btn.disabled = false; btn.innerHTML = '✨ 解析并执行';
+
+  if (gi < 0) { ui.toast('未识别到分组列', 'err'); log('未识别到分组列', 'warn'); return; }
+  applyPlan(plan, via);
+}
+
+function applyPlan(plan, via) {
+  const gi = findHeaderIndex(plan.groupBy);
+  const vi = findHeaderIndex(plan.valueColumn);
+  $('groupCol').value = gi >= 0 ? String(gi) : '';
+  $('valueCol').value = vi >= 0 ? String(vi) : '0';
+  $('agg').value = HF.AGGS.includes(plan.agg) ? plan.agg : 'sum';
+  $('aiOut').innerHTML = `<div class="chip">已解析（${via}）：按 <b>${esc(plan.groupBy)}</b> 对 <b>${esc(plan.valueColumn || '行数')}</b> 进行 <b>${HF.AGG_LABELS[$('agg').value]}</b></div>`;
+  log(`AI 指令解析完成（${via}）`, 'ok');
+  process(gi >= 0 ? String(gi) : '', vi >= 0 ? String(vi) : '', $('agg').value);
+}
+
+async function aiReport() {
+  if (!state.result) { ui.toast('请先处理数据', 'err'); return; }
+  const r = state.result;
+  const btn = $('aiReport');
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> 生成中…';
+  $('aiOut').innerHTML = '<div class="dim" style="font-size:13px">AI 正在分析…</div>';
+
+  const summaryText = r.summaryHeaders
+    ? r.summaryHeaders.join(' | ') + '\n' + r.summaryRows.slice(0, 30).map(x => x.join(' | ')).join('\n')
+    : '（未启用汇总）';
+  const ctx = `原始行数:${r.originalCount} 输出行数:${r.cleanRows.length} 删除空行:${r.removedEmpty} 删除重复:${r.removedDup}\n汇总结果:\n${summaryText}`;
+
+  let text = null, via = 'Ollama';
+  try {
+    if (await Ollama.available()) {
+      log('调用本地 Ollama 生成分析报告…');
+      text = await Ollama.chat({
+        system: '你是资深数据分析师，用简洁中文写经营分析报告，分点，突出关键发现与建议。不要编造数据。',
+        prompt: `基于以下表格处理结果，写一份简短分析报告（150-250字）：\n${ctx}`
+      });
+    }
+  } catch (e) { log('AI 调用失败：' + esc(e.message), 'err'); }
+
+  if (!text) { text = fallbackReport(r); via = '规则兜底'; log('Ollama 不可用，已生成本地规则报告', 'warn'); }
+  else log('AI 分析报告已生成', 'ok');
+
+  $('aiOut').innerHTML = `<div class="chip" style="margin-bottom:8px">来源：${via}</div>` +
+    `<div class="card pad-sm report" style="background:rgba(0,0,0,.2);border-color:var(--line-strong)">${esc(text).replace(/\n/g, '<br>')}</div>`;
+  btn.disabled = false; btn.innerHTML = 'AI 生成分析报告';
+}
+
+function fallbackReport(r) {
+  const lines = [`数据共 ${r.originalCount} 行，输出 ${r.cleanRows.length} 行（删除空行 ${r.removedEmpty}、重复 ${r.removedDup}）。`];
+  if (r.summaryHeaders && r.summaryRows.length) {
+    lines.push(`按「${r.summaryHeaders[0]}」汇总为 ${r.summaryRows.length} 组。`);
+    lines.push('排名前三：' + r.summaryRows.slice(0, 3).map(x => `${x[0]}=${x[1]}`).join('，') + '。');
+  } else {
+    lines.push('未启用分组汇总，建议选择“分组列”和“数值列”后再生成报告。');
+  }
+  return lines.join('\n');
+}
+
+/* ---------- 内置示例，进入即有数据 ---------- */
+(function seed() {
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(sampleData()), 'Sheet1');
+  loadWorkbook(new Uint8Array(XLSX.write(wb, { type: 'array', bookType: 'xlsx' })), '内置示例数据');
+  log('已载入内置示例数据，可直接点“开始处理”或试 AI 指令', 'ok');
+})();
+</script>
+</body>
+</html>

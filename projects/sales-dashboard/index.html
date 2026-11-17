@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>销售数据看板 · AI 洞察版</title>
+<link rel="stylesheet" href="../../assets/style.css" />
+<script src="../../assets/vendor/xlsx.full.min.js"></script>
+<script src="../../assets/vendor/chart.umd.min.js"></script>
+<style>
+  .topbar { position: sticky; top: 0; z-index: 40; backdrop-filter: blur(14px); background: rgba(7,11,24,.8); border-bottom: 1px solid var(--line); }
+  .topbar .inner { display: flex; align-items: center; justify-content: space-between; height: 64px; }
+  .topbar .back { color: var(--text-soft); font-size: 14px; }
+  .page { padding: 28px 0 80px; }
+  .kpis { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; margin: 20px 0; }
+  .kpi { position: relative; overflow: hidden; }
+  .kpi::before { content: ""; position: absolute; right: -20px; top: -20px; width: 90px; height: 90px; border-radius: 50%; background: radial-gradient(circle, rgba(99,102,241,.25), transparent 70%); }
+  .minis { display: grid; grid-template-columns: repeat(3,1fr); gap: 14px; margin-bottom: 22px; }
+  .minis .stat b { font-size: 20px; }
+  .charts { display: grid; grid-template-columns: 1.5fr 1fr; gap: 20px; }
+  canvas { max-height: 320px; }
+  .drop { border: 2px dashed var(--line-strong); border-radius: var(--radius-sm); padding: 18px; text-align: center; cursor: pointer; transition: .2s; }
+  .drop:hover, .drop.over { border-color: var(--i2); background: rgba(34,211,238,.06); }
+  .sel { display: grid; grid-template-columns: repeat(3,1fr); gap: 16px; }
+  .filters { display: grid; grid-template-columns: repeat(4,1fr); gap: 16px; align-items: end; }
+  .insight { white-space: pre-wrap; line-height: 1.9; font-size: 14.5px; }
+  @media (max-width: 900px) { .kpis, .minis, .filters { grid-template-columns: repeat(2,1fr); } .charts, .sel { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+
+<div class="topbar">
+  <div class="container inner">
+    <b>📈 销售数据看板</b>
+    <div class="row"><div id="ol-status"></div><a class="back" href="../../index.html">← 返回作品集</a></div>
+  </div>
+</div>
+
+<div class="container page">
+
+  <div class="row between" style="align-items:flex-start;margin-bottom:18px">
+    <div style="max-width:640px">
+      <div class="eyebrow">Sales Intelligence</div>
+      <h2 class="section-title" style="margin-top:6px">自动识别维度，支持筛选、导出与经营洞察</h2>
+      <p class="muted">上传销售表或使用内置示例。可筛选日期区间与 Top-N，导出汇总 CSV 与趋势图 PNG；AI 洞察走本地 Ollama。</p>
+    </div>
+    <div class="drop" id="drop" style="min-width:260px">📄 点击 / 拖入 Excel、CSV<input type="file" id="file" accept=".xlsx,.xls,.csv" class="hidden" /></div>
+  </div>
+
+  <div class="card pad">
+    <div class="sel">
+      <div><label>日期列</label><select id="c-date"></select></div>
+      <div><label>分类列（门店/商品）</label><select id="c-cat"></select></div>
+      <div><label>金额列</label><select id="c-amt"></select></div>
+    </div>
+    <div class="filters" style="margin-top:16px">
+      <div><label>开始日期</label><input type="date" id="f-start" /></div>
+      <div><label>结束日期</label><input type="date" id="f-end" /></div>
+      <div><label>分类 Top-N</label><select id="f-topn"><option value="0">全部</option><option value="5">前 5</option><option value="10">前 10</option><option value="20">前 20</option></select></div>
+      <div><label>&nbsp;</label><button class="btn btn-ghost btn-block" id="resetFilter">重置筛选</button></div>
+    </div>
+  </div>
+
+  <div class="kpis" id="kpis"></div>
+  <div class="minis" id="minis"></div>
+
+  <div class="charts">
+    <div class="card pad" data-reveal>
+      <div class="row between"><h3 style="margin:0">销售额趋势</h3><div class="row" style="gap:8px"><span class="chip" id="rangeTag">-</span><button class="btn btn-sm" id="pngBtn">导出 PNG</button></div></div>
+      <canvas id="trend" style="margin-top:14px"></canvas>
+    </div>
+    <div class="card pad" data-reveal data-delay="0.08">
+      <div class="row between"><h3 style="margin:0 0 14px">分类占比</h3><button class="btn btn-sm" id="csvBtn">导出 CSV</button></div>
+      <canvas id="pie"></canvas>
+    </div>
+  </div>
+
+  <div class="card pad ai-card" data-reveal style="margin-top:20px;border-color:rgba(168,85,247,.35);background:linear-gradient(120deg, rgba(99,102,241,.10), rgba(168,85,247,.08))">
+    <div class="row between">
+      <div><div class="eyebrow" style="color:#d8b4fe">AI 经营洞察 · 本地 Ollama</div><p class="muted" style="font-size:13px;margin:6px 0 0">基于当前筛选后的数据生成关键发现与建议。</p></div>
+      <button class="btn btn-primary" id="aiBtn">✨ 生成洞察</button>
+    </div>
+    <div id="aiOut" style="margin-top:14px"></div>
+  </div>
+
+  <h3 style="margin:26px 0 10px">明细数据（前 100 行）</h3>
+  <div class="table-scroll" id="tableWrap"></div>
+
+  <h3 style="margin:26px 0 10px">日志</h3>
+  <div class="log" id="log"></div>
+</div>
+
+<script src="../../assets/animations.js"></script>
+<script src="../../assets/core.js"></script>
+<script src="../../assets/ollama.js"></script>
+<script>
+const state = { headers: [], rows: [], agg: null };
+const $ = (id) => document.getElementById(id);
+const norm = HF.norm;
+let trendChart, pieChart;
+
+function log(msg, type = '') {
+  const t = new Date().toLocaleTimeString('zh-CN', { hour12: false });
+  $('log').insertAdjacentHTML('beforeend', `<div><span class="time">[${t}]</span> <span class="${type}">${msg}</span></div>`);
+  $('log').scrollTop = $('log').scrollHeight;
+}
+function esc(s) { return String(s ?? '').replace(/[&<>]/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;' }[c])); }
+
+function countUp(el, target, prefix = '', suffix = '', dec = 0) {
+  const dur = 900, start = performance.now();
+  (function step(now) {
+    const p = Math.min(1, (now - start) / dur), e = 1 - Math.pow(1 - p, 3);
+    el.textContent = prefix + (target * e).toLocaleString('zh-CN', { minimumFractionDigits: dec, maximumFractionDigits: dec }) + suffix;
+    if (p < 1) requestAnimationFrame(step);
+  })(start);
+}
+
+function fillSelects() {
+  const opts = state.headers.map((h, i) => `<option value="${i}">${esc(h)}</option>`).join('');
+  $('c-date').innerHTML = opts; $('c-cat').innerHTML = opts; $('c-amt').innerHTML = opts;
+  const d = HF.detectColumns(state.headers, state.rows);
+  $('c-date').value = String(d.dateCol);
+  $('c-cat').value = String(d.catCol);
+  $('c-amt').value = String(d.amtCol);
+  setDateBounds();
+}
+
+function toISO(v) {
+  const t = norm(v);
+  if (!t) return '';
+  if (/^\d{4}-\d{2}-\d{2}/.test(t)) return t.slice(0, 10);
+  const dt = new Date(t.replace(/[/.]/g, '-'));
+  if (!Number.isNaN(dt.getTime())) return dt.toISOString().slice(0, 10);
+  return '';
+}
+function setDateBounds() {
+  const di = +$('c-date').value;
+  const ds = state.rows.map(r => toISO(r[di])).filter(Boolean).sort();
+  if (ds.length) { $('f-start').value = ds[0]; $('f-end').value = ds[ds.length - 1]; }
+  else { $('f-start').value = ''; $('f-end').value = ''; }
+}
+
+function renderTable() {
+  let html = '<table class="data"><thead><tr>' + state.headers.map(h => `<th>${esc(h)}</th>`).join('') + '</tr></thead><tbody>';
+  state.rows.slice(0, 100).forEach(r => html += '<tr>' + state.headers.map((_, i) => `<td>${esc(r[i])}</td>`).join('') + '</tr>');
+  $('tableWrap').innerHTML = html + '</tbody></table>';
+}
+
+function filteredRows() {
+  const di = +$('c-date').value;
+  const start = $('f-start').value, end = $('f-end').value;
+  if (!start && !end) return state.rows;
+  return state.rows.filter(r => {
+    const iso = toISO(r[di]);
+    if (!iso) return true;
+    if (start && iso < start) return false;
+    if (end && iso > end) return false;
+    return true;
+  });
+}
+
+function render() {
+  const dCol = +$('c-date').value, cCol = +$('c-cat').value, aCol = +$('c-amt').value;
+  const rows = filteredRows();
+  const byDate = new Map(), byCat = new Map();
+  let total = 0, count = 0, maxDay = { d: '-', v: 0 };
+
+  rows.forEach(r => {
+    const amt = HF.toNum(r[aCol]);
+    const d = norm(r[dCol]) || '未知', c = norm(r[cCol]) || '未分类';
+    total += amt; count++;
+    byDate.set(d, (byDate.get(d) || 0) + amt);
+    byCat.set(c, (byCat.get(c) || 0) + amt);
+    if (byDate.get(d) > maxDay.v) maxDay = { d, v: byDate.get(d) };
+  });
+  const avg = count ? total / count : 0;
+  const topN = +$('f-topn').value || 0;
+  const dateKeys = [...byDate.keys()].sort((a, b) => String(a).localeCompare(String(b)));
+  let catKeys = [...byCat.entries()].sort((a, b) => b[1] - a[1]);
+  if (topN && catKeys.length > topN) {
+    const rest = catKeys.slice(topN).reduce((s, e) => s + e[1], 0);
+    catKeys = catKeys.slice(0, topN).concat([['其他', rest]]);
+  }
+  const catLabels = catKeys.map(e => e[0]);
+
+  state.agg = { total, count, avg, byDate, dateKeys, byCat, catKeys: catLabels, catVals: catKeys.map(e => e[1]),
+    maxDay, dayCount: dateKeys.length, catCount: catKeys.length,
+    dName: state.headers[dCol], cName: state.headers[cCol], aName: state.headers[aCol] };
+
+  $('kpis').innerHTML = `
+    <div class="kpi p"><span>总销售额</span><b id="k1">¥0</b></div>
+    <div class="kpi"><span>订单数</span><b id="k2">0</b></div>
+    <div class="kpi g"><span>平均客单价</span><b id="k3">¥0</b></div>
+    <div class="kpi a"><span>最高单日 (${esc(maxDay.d)})</span><b id="k4">¥0</b></div>`;
+  countUp($('k1'), total, '¥'); countUp($('k2'), count); countUp($('k3'), Math.round(avg), '¥'); countUp($('k4'), maxDay.v, '¥');
+
+  const avgPerDay = dateKeys.length ? total / dateKeys.length : 0;
+  $('minis').innerHTML = `
+    <div class="stat"><b>${esc(state.agg.dName)}</b><span>时间跨度 · ${state.agg.dayCount} 天</span></div>
+    <div class="stat"><b>¥${HF.toNumberFmt(avgPerDay, 0)}</b><span>日均销售额</span></div>
+    <div class="stat"><b>${state.agg.catCount}</b><span>分类数（${esc(state.agg.cName)}）</span></div>`;
+  $('rangeTag').textContent = dateKeys.length ? `${dateKeys[0]} → ${dateKeys[dateKeys.length - 1]}` : '-';
+
+  if (trendChart) trendChart.destroy();
+  if (pieChart) pieChart.destroy();
+
+  const ctx = $('trend').getContext('2d');
+  const grd = ctx.createLinearGradient(0, 0, 0, 300);
+  grd.addColorStop(0, 'rgba(99,102,241,.45)'); grd.addColorStop(1, 'rgba(99,102,241,0)');
+  trendChart = new Chart($('trend'), {
+    type: 'line',
+    data: { labels: dateKeys, datasets: [{ label: '销售额', data: dateKeys.map(k => byDate.get(k)),
+      borderColor: '#818cf8', backgroundColor: grd, fill: true, tension: .35, pointRadius: 3, pointBackgroundColor: '#22d3ee', borderWidth: 2.5 }] },
+    options: { responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, tooltip: { backgroundColor: 'rgba(11,17,32,.95)', borderColor: 'rgba(255,255,255,.15)', borderWidth: 1 } },
+      scales: { x: { grid: { color: 'rgba(255,255,255,.06)' }, ticks: { color: '#9aa4c4' } },
+                y: { grid: { color: 'rgba(255,255,255,.06)' }, ticks: { color: '#9aa4c4' } } } }
+  });
+
+  pieChart = new Chart($('pie'), {
+    type: 'doughnut',
+    data: { labels: catLabels, datasets: [{ data: catKeys.map(e => e[1]),
+      backgroundColor: ['#6366f1', '#22d3ee', '#a855f7', '#22c55e', '#ec4899', '#f59e0b', '#ef4444', '#64748b'], borderColor: 'rgba(7,11,24,.6)', borderWidth: 3 }] },
+    options: { responsive: true, maintainAspectRatio: false, cutout: '62%',
+      plugins: { legend: { position: 'bottom', labels: { color: '#9aa4c4', padding: 14, usePointStyle: true } } } }
+  });
+  log(`已更新看板：${count} 条记录，${catLabels.length} 个分类`, 'ok');
+}
+
+/* ---------- 上传 ---------- */
+$('drop').addEventListener('click', () => $('file').click());
+['dragover', 'dragenter'].forEach(ev => $('drop').addEventListener(ev, e => { e.preventDefault(); $('drop').classList.add('over'); }));
+['dragleave', 'drop'].forEach(ev => $('drop').addEventListener(ev, e => { e.preventDefault(); $('drop').classList.remove('over'); }));
+$('drop').addEventListener('drop', e => { const f = e.dataTransfer.files[0]; if (f) readFile(f); });
+$('file').addEventListener('change', e => { if (e.target.files[0]) readFile(e.target.files[0]); });
+function readFile(file) {
+  const isCsv = /\.csv$/i.test(file.name);
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const wb = XLSX.read(isCsv ? e.target.result : new Uint8Array(e.target.result), { type: isCsv ? 'string' : 'array' });
+      load(wb, file.name);
+    } catch (err) { log('解析失败：' + esc(err.message), 'err'); ui.toast('文件解析失败', 'err'); }
+  };
+  isCsv ? reader.readAsText(file, 'utf-8') : reader.readAsArrayBuffer(file);
+}
+function load(wb, name) {
+  const ws = wb.Sheets[wb.SheetNames[0]];
+  const aoa = XLSX.utils.sheet_to_json(ws, { header: 1, raw: false, defval: '' });
+  if (!aoa.length) { log('文件为空', 'err'); return; }
+  state.headers = aoa[0].map((h, i) => norm(h) || `列${i + 1}`);
+  state.rows = aoa.slice(1).filter(r => r.some(c => norm(c) !== ''));
+  fillSelects(); render(); renderTable();
+  log(`已读取 <b>${esc(name)}</b>：${state.rows.length} 行`, 'ok'); ui.toast('数据已载入', 'ok');
+}
+['c-date', 'c-cat', 'c-amt'].forEach(id => $(id).addEventListener('change', () => { if (id === 'c-date') setDateBounds(); render(); }));
+['f-start', 'f-end', 'f-topn'].forEach(id => $(id).addEventListener('change', render));
+$('resetFilter').addEventListener('click', () => { setDateBounds(); $('f-topn').value = '0'; render(); ui.toast('已重置筛选', 'ok'); });
+
+/* ---------- 导出 ---------- */
+$('pngBtn').addEventListener('click', () => {
+  if (!trendChart) return;
+  const a = document.createElement('a');
+  a.href = trendChart.toBase64Image();
+  a.download = '销售额趋势.png'; a.click();
+  ui.toast('趋势图已导出', 'ok');
+});
+$('csvBtn').addEventListener('click', () => {
+  if (!state.agg) return;
+  const a = state.agg;
+  const lines = [`${a.cName},销售额`];
+  a.catKeys.forEach((k, i) => lines.push(`${k},${a.catVals[i]}`));
+  lines.push(`合计,${a.total}`);
+  ui.download('分类汇总.csv', '\ufeff' + lines.join('\n'), 'text/csv;charset=utf-8');
+  ui.toast('分类汇总已导出', 'ok');
+});
+
+/* ---------- AI 洞察 ---------- */
+Ollama.mountBadge($('ol-status'));
+$('aiBtn').addEventListener('click', async () => {
+  if (!state.agg) { ui.toast('暂无数据', 'err'); return; }
+  const a = state.agg, btn = $('aiBtn');
+  btn.disabled = true; btn.innerHTML = '<span class="spin"></span> 分析中…';
+  $('aiOut').innerHTML = '<div class="dim" style="font-size:13px">AI 正在分析…</div>';
+
+  const top = a.catKeys.slice(0, 6).map((k, i) => `${k}:¥${a.catVals[i]}`).join('，');
+  const ctx = `指标口径：${a.cName}=分类，${a.aName}=金额，${a.dName}=日期\n总销售额:¥${a.total}，订单数:${a.count}，平均客单价:¥${a.avg.toFixed(1)}，最高单日:${a.maxDay.d} ¥${a.maxDay.v}\n分类合计:${top}`;
+
+  let text = null, via = 'Ollama';
+  try {
+    if (await Ollama.available()) {
+      text = await Ollama.chat({ system: '你是资深零售数据分析师，用简洁中文给老板写经营洞察：3-5 条关键发现，每条一句，最后给 1 条可执行建议。不要编造数据。', prompt: '基于以下销售数据写洞察：\n' + ctx });
+    }
+  } catch (e) { log('AI 调用失败：' + esc(e.message), 'err'); }
+
+  if (!text) { text = fallback(a); via = '规则兜底'; log('Ollama 不可用，已生成本地规则洞察', 'warn'); }
+  else log('AI 洞察已生成', 'ok');
+
+  $('aiOut').innerHTML = `<div class="chip" style="margin-bottom:8px">来源：${via}</div>
+    <div class="card pad-sm insight" style="background:rgba(0,0,0,.22);border-color:var(--line-strong)">${esc(text).replace(/\n/g, '<br>')}</div>`;
+  btn.disabled = false; btn.innerHTML = '✨ 生成洞察';
+});
+function fallback(a) {
+  const arr = a.catKeys.map((k, i) => [k, a.catVals[i]]);
+  const top = arr[0], second = arr[1];
+  const l = [];
+  l.push(`总销售额 ¥${HF.toNumberFmt(a.total, 0)}，共 ${a.count} 单，平均客单价 ¥${a.avg.toFixed(1)}。`);
+  if (top) l.push(`贡献最高的是「${top[0]}」，合计 ¥${top[1]}，占比 ${(top[1] / a.total * 100).toFixed(1)}%。`);
+  if (second) l.push(`紧随其后的是「${second[0]}」，¥${second[1]}。`);
+  if (top && second && top[1] > second[1] * 1.5) l.push(`头部集中度较高，建议向「${top[0]}」倾斜资源，同时分析其余分类的流失原因。`);
+  l.push(`最高单日出现在 ${a.maxDay.d}（¥${a.maxDay.v}），可复盘当日活动或客流。`);
+  return l.join('\n');
+}
+
+/* ---------- 示例数据 ---------- */
+(function seed() {
+  const rows = [['日期', '门店', '商品', '金额']];
+  const stores = ['北京店', '上海店', '广州店', '成都店'];
+  const goods = ['拿铁', '美式', '蛋糕', '轻食'];
+  let s = 20260101;
+  const rnd = () => { s = (s * 1103515245 + 12345) & 0x7fffffff; return s / 0x7fffffff; };
+  const ri = (a, b) => a + Math.floor(rnd() * (b - a + 1));
+  for (let d = 1; d <= 14; d++) {
+    const date = `2026-01-${String(d).padStart(2, '0')}`;
+    for (const st of stores) {
+      const orders = ri(1, 3);
+      for (let o = 0; o < orders; o++) rows.push([date, st, goods[ri(0, goods.length - 1)], String(ri(30, 400))]);
+    }
+  }
+  const wb = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(rows), '销售');
+  load(wb, '内置示例数据');
+  log('已载入示例数据，可筛选或生成 AI 洞察', 'ok');
+})();
+</script>
+</body>
+</html>
